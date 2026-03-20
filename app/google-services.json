@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "679234031594",
+    "project_id": "restifysite",
+    "storage_bucket": "restifysite.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:679234031594:android:4cdfc9c0db4b5d2172ec93",
+        "android_client_info": {
+          "package_name": "com.restify.courierapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDyJ42tI1qsksS1SBmjBQVbimIoABJZQ2o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:679234031594:android:17714d9eee2958a572ec93",
+        "android_client_info": {
+          "package_name": "com.restify.rest"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDyJ42tI1qsksS1SBmjBQVbimIoABJZQ2o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

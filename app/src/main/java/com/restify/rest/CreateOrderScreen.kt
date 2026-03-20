@@ -1,0 +1,507 @@
+package com.restify.rest
+
+import android.preference.PreferenceManager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
+    var address by remember { mutableStateOf("") }
+    var customerName by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    var fee by remember { mutableStateOf("80") } // Значення за замовчуванням
+    var comment by remember { mutableStateOf("") }
+    var paymentType by remember { mutableStateOf("prepaid") }
+
+    // --- НОВИЙ СТЕЙТ ДЛЯ ЧАСУ ПРИГОТУВАННЯ (за замовчуванням 15) ---
+    var prepTime by remember { mutableStateOf(15) }
+
+    // Состояние для интерактивной кнопки
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    // Валідація телефону (починається з 0, рівно 10 цифр)
+    val isPhoneValid = phone.matches(Regex("^0\\d{9}$"))
+    // Валідація ціни (щоб не було крашу при введенні тексту замість цифр)
+    val isPriceValid = price.isEmpty() || price.toDoubleOrNull() != null
+
+    // Состояние карты и автодополнения
+    var mapCenter by remember { mutableStateOf(GeoPoint(46.4825, 30.7233)) } // Одеса за замовчуванням
+    var isDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Отримуємо результати пошуку з ViewModel замість прямого HTTP запиту в UI
+    val searchResults by viewModel.searchResults.collectAsState()
+
+    val coroutineScope = rememberCoroutineScope()
+    var searchJob by remember { mutableStateOf<Job?>(null) }
+    val scrollState = rememberScrollState()
+
+    // Настройка ТЕМНОЙ темы
+    val backgroundColor = Color(0xFF121212) // Глибокий чорний
+    val cardColor = Color(0xFF1E1E1E) // Темно-сірий для карток
+    val primaryAccent = Color(0xFFBB86FC) // Фіолетовий акцент
+    val textColor = Color.White
+    val textSecondaryColor = Color(0xFFAAAAAA)
+    val dividerColor = Color(0xFF333333)
+
+    // Универсальные цвета для полей ввода
+    val darkTextFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = primaryAccent,
+        unfocusedBorderColor = dividerColor,
+        focusedContainerColor = cardColor,
+        unfocusedContainerColor = cardColor,
+        focusedTextColor = textColor,
+        unfocusedTextColor = textColor,
+        cursorColor = primaryAccent,
+        focusedLabelColor = primaryAccent,
+        unfocusedLabelColor = textSecondaryColor
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundColor)
+            .verticalScroll(scrollState)
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Нова доставка",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            modifier = Modifier.padding(vertical = 16.dp)
+        )
+
+        // Блок адреса с картой
+        PremiumCard(cardColor = cardColor) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Куди веземо?", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = textSecondaryColor)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Ввод адреса с автодополнением
+                ExposedDropdownMenuBox(
+                    expanded = isDropdownExpanded,
+                    onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = { newValue ->
+                            address = newValue
+                            isDropdownExpanded = true
+                            // Debounce логика для поиска
+                            searchJob?.cancel()
+                            searchJob = coroutineScope.launch {
+                                delay(600) // Ждем 600мс после последнего ввода
+                                viewModel.searchAddress(newValue)
+                            }
+                        },
+                        placeholder = { Text("Введіть адресу доставки...", color = textSecondaryColor) },
+                        leadingIcon = { Icon(Icons.Outlined.Place, contentDescription = "Address", tint = primaryAccent) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = darkTextFieldColors,
+                        singleLine = true
+                    )
+
+                    // Выпадающий список с результатами поиска
+                    if (searchResults.isNotEmpty()) {
+                        ExposedDropdownMenu(
+                            expanded = isDropdownExpanded,
+                            onDismissRequest = { isDropdownExpanded = false },
+                            modifier = Modifier.background(cardColor)
+                        ) {
+                            searchResults.forEach { suggestion ->
+                                // Формуємо коротку адресу (Вулиця, Будинок, Місто)
+                                val shortAddressName = suggestion.address?.let { addr ->
+                                    val road = addr.road.orEmpty()
+                                    val houseNumber = addr.houseNumber.orEmpty()
+                                    val city = addr.city ?: addr.town ?: addr.village ?: ""
+                                    listOf(road, houseNumber, city).filter { it.isNotBlank() }.joinToString(", ")
+                                }.takeIf { !it.isNullOrBlank() } ?: suggestion.display_name
+
+                                DropdownMenuItem(
+                                    text = { Text(shortAddressName, color = textColor, maxLines = 2) },
+                                    onClick = {
+                                        address = shortAddressName
+                                        val lat = suggestion.lat.toDoubleOrNull() ?: mapCenter.latitude
+                                        val lon = suggestion.lon.toDoubleOrNull() ?: mapCenter.longitude
+                                        mapCenter = GeoPoint(lat, lon)
+                                        isDropdownExpanded = false
+                                        viewModel.searchAddress("") // Очищаємо результати
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Контейнер карты
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                ) {
+                    OpenStreetMapComponent(centerPoint = mapCenter)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Блок данных клиента
+        PremiumCard(cardColor = cardColor) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Деталі замовлення", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = textSecondaryColor)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = customerName,
+                    onValueChange = { customerName = it },
+                    placeholder = { Text("Ім'я клієнта", color = textSecondaryColor) },
+                    leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = "Name", tint = primaryAccent) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = darkTextFieldColors,
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { newValue ->
+                        // Залишаємо лише цифри та обмежуємо довжину до 10 символів
+                        val digitsOnly = newValue.filter { it.isDigit() }.take(10)
+                        phone = digitsOnly
+                    },
+                    placeholder = { Text("Телефон (наприклад: 0632020619)", color = textSecondaryColor) },
+                    leadingIcon = { Icon(Icons.Outlined.Phone, contentDescription = "Phone", tint = primaryAccent) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    isError = phone.isNotEmpty() && !isPhoneValid,
+                    supportingText = {
+                        if (phone.isNotEmpty() && !isPhoneValid) {
+                            Text("Формат: 10 цифр, починається з 0 (без +38)", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = darkTextFieldColors,
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = price,
+                        onValueChange = { price = it },
+                        placeholder = { Text("Сума (₴)", color = textSecondaryColor) },
+                        leadingIcon = { Icon(Icons.Outlined.AttachMoney, contentDescription = "Price", tint = primaryAccent) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = !isPriceValid,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = darkTextFieldColors,
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = fee,
+                        onValueChange = { fee = it },
+                        placeholder = { Text("Доставка (₴)", color = textSecondaryColor) },
+                        leadingIcon = { Icon(Icons.Outlined.LocalShipping, contentDescription = "Fee", tint = primaryAccent) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = darkTextFieldColors,
+                        singleLine = true
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Блок оплаты и настроек
+        PremiumCard(cardColor = cardColor) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Оплата", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = textSecondaryColor)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    PaymentOption("Оплачено", Icons.Outlined.CheckCircle, paymentType == "prepaid", primaryAccent) {
+                        paymentType = "prepaid"
+                    }
+                    PaymentOption("Викуп", Icons.Outlined.ShoppingBag, paymentType == "buyout", primaryAccent) {
+                        paymentType = "buyout"
+                    }
+                }
+
+                if (paymentType == "buyout") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF3E2723), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0xFFD84315), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(Icons.Outlined.Info, contentDescription = null, tint = Color(0xFFFFCCBC), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Увага: Кур'єр викупить замовлення за власні кошти в закладі, а потім забере гроші у клієнта. Повертатися в заклад йому більше не потрібно. Не забудьте в додатку підтвердити отримання коштів від кур'єра під час видачі!",
+                                fontSize = 13.sp,
+                                color = Color(0xFFFFCCBC),
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // --- НОВИЙ БЛОК: ЧАС ПРИГОТУВАННЯ ---
+        PremiumCard(cardColor = cardColor) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Timer, contentDescription = "Timer", tint = primaryAccent)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Час приготування (хв)",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        color = textSecondaryColor
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val timeOptions = listOf(10, 15, 20, 30, 45, 60)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    items(timeOptions) { time ->
+                        val isSelected = prepTime == time
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) primaryAccent.copy(alpha = 0.2f) else Color.Transparent)
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) primaryAccent else dividerColor,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .clickable { prepTime = time }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "$time",
+                                fontSize = 16.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) primaryAccent else textColor
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "'Готово' через $prepTime хв",
+                    fontSize = 12.sp,
+                    color = textSecondaryColor
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = comment,
+            onValueChange = { comment = it },
+            placeholder = { Text("Коментар кур'єру...", color = textSecondaryColor) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(100.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = darkTextFieldColors
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Интерактивная кнопка подтверждения
+        Button(
+            onClick = {
+                isSubmitting = true
+
+                // Читаємо введену суму. Якщо порожньо або помилка - ставимо 80.0
+                val parsedFee = fee.toDoubleOrNull() ?: 80.0
+                // Примусово не даємо опустити ціну нижче 80.0
+                val finalFee = if (parsedFee < 80.0) 80.0 else parsedFee
+
+                val request = OrderCreateRequest(
+                    address = address,
+                    customerName = customerName,
+                    phone = phone,
+                    price = price.toDoubleOrNull() ?: 0.0,
+                    fee = finalFee,
+                    comment = comment,
+                    paymentType = paymentType,
+                    isReturnRequired = false,
+                    prepTime = prepTime // <-- ПЕРЕДАЄМО ВИБРАНИЙ ЧАС В РЕКВЕСТ
+                )
+                viewModel.createNewOrder(request) {
+                    isSubmitting = false
+                    onOrderCreated()
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = primaryAccent,
+                disabledContainerColor = dividerColor
+            ),
+            // Кнопка активна тільки якщо введено адресу, ім'я, ВАЛІДНИЙ номер телефону та ціну
+            enabled = address.isNotEmpty() && customerName.isNotEmpty() && isPhoneValid && isPriceValid && !isSubmitting
+        ) {
+            if (isSubmitting) {
+                CircularProgressIndicator(
+                    color = backgroundColor,
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 3.dp
+                )
+            } else {
+                Text("ВІДПРАВИТИ КУР'ЄРУ", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = backgroundColor)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+}
+
+@Composable
+fun PremiumCard(cardColor: Color, content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = cardColor,
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun PaymentOption(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isSelected: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    val color = if (isSelected) accentColor else Color(0xFFAAAAAA)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Icon(icon, contentDescription = text, tint = color, modifier = Modifier.size(32.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text, fontSize = 14.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, color = color)
+    }
+}
+
+// Виправлений компонент карти: тепер він керує своїм життєвим циклом, що усуває витоки пам'яті
+@Composable
+fun OpenStreetMapComponent(centerPoint: GeoPoint) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var mapView by remember { mutableStateOf<MapView?>(null) }
+
+    remember {
+        Configuration.getInstance().load(context, PreferenceManager.getDefaultSharedPreferences(context))
+        Configuration.getInstance().userAgentValue = context.packageName
+    }
+
+    // Правильне керування життєвим циклом карти для уникнення витоку пам'яті (Memory Leak)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> mapView?.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView?.onPause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView?.onDetach()
+        }
+    }
+
+    AndroidView(
+        factory = { ctx ->
+            MapView(ctx).apply {
+                mapView = this
+                setTileSource(TileSourceFactory.MAPNIK)
+                setMultiTouchControls(true)
+                controller.setZoom(17.0)
+                controller.setCenter(centerPoint)
+            }
+        },
+        update = { view ->
+            // Плавная анимация карты к новой точке при выборе адреса
+            view.controller.animateTo(centerPoint)
+        },
+        modifier = Modifier.fillMaxSize()
+    )
+}
