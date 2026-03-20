@@ -105,15 +105,6 @@ data class TrackCourierResponse(
     @SerializedName("job_status") val jobStatus: String?
 )
 
-// --- МОДЕЛЬ ДЛЯ ОНОВЛЕННЯ ДОДАТКУ (IN-APP UPDATE) ---
-data class AppUpdateResponse(
-    val success: Boolean,
-    val app: String,
-    @SerializedName("latest_version_code") val latestVersionCode: Int,
-    @SerializedName("latest_version_name") val latestVersionName: String,
-    @SerializedName("download_url") val downloadUrl: String
-)
-
 // --- НОВА МОДЕЛЬ ДЛЯ ПРОФІЛЮ ПАРТНЕРА ---
 data class PartnerProfile(
     val name: String,
@@ -239,10 +230,6 @@ interface RestPartnerApi {
     suspend fun sendFcmToken(
         @Field("token") token: String
     ): Response<Unit>
-
-    // --- ЕНДПОІНТ ДЛЯ ПЕРЕВІРКИ ОНОВЛЕНЬ ---
-    @GET("/api/check-update/partner")
-    suspend fun checkUpdate(): Response<AppUpdateResponse>
 }
 
 // --- ОКРЕМИЙ ІНТЕРФЕЙС ДЛЯ OPENSTREETMAP ---

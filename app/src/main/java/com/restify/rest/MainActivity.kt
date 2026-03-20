@@ -1,8 +1,6 @@
 package com.restify.rest
 
 import android.Manifest
-import android.app.AlertDialog
-import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -12,7 +10,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -41,25 +38,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.google.firebase.messaging.FirebaseMessaging
 import com.restify.rest.ui.theme.RestTheme
-import kotlinx.coroutines.launch
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -142,9 +135,6 @@ class MainActivity : ComponentActivity() {
 
         val api = retrofit.create(RestPartnerApi::class.java)
 
-        // --- ПЕРЕВІРЯЄМО ОНОВЛЕННЯ ПРИ СТАРТІ ---
-        checkForUpdates(api)
-
         // Ініціалізація API для пошуку адрес (OpenStreetMap Nominatim)
         val nominatimRetrofit = Retrofit.Builder()
             .baseUrl("https://nominatim.openstreetmap.org/")
@@ -190,106 +180,6 @@ class MainActivity : ComponentActivity() {
         // Обов'язково відписуємося від ресівера, щоб уникнути витоку пам'яті
         unregisterReceiver(orderUpdateReceiver)
     }
-
-    // --- ЛОГІКА IN-APP ОНОВЛЕНЬ (ЗАЛИШЕНА ЯК БУЛА ДЛЯ РОБОТИ БЕЗ GOOGLE PLAY) ---
-
-    private fun checkForUpdates(api: RestPartnerApi) {
-        lifecycleScope.launch {
-            try {
-                val response = api.checkUpdate()
-                if (response.isSuccessful && response.body() != null) {
-                    val updateData = response.body()!!
-
-                    // Отримуємо поточну версію додатка
-                    val packageInfo = packageManager.getPackageInfo(packageName, 0)
-                    val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        packageInfo.longVersionCode.toInt()
-                    } else {
-                        packageInfo.versionCode
-                    }
-
-                    // Якщо на сервері версія більша, пропонуємо оновити
-                    if (updateData.latestVersionCode > currentVersionCode) {
-                        showUpdateDialog(updateData.downloadUrl, updateData.latestVersionName)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Помилка перевірки оновлень: ${e.message}")
-            }
-        }
-    }
-
-    private fun showUpdateDialog(downloadUrl: String, versionName: String) {
-        AlertDialog.Builder(this@MainActivity)
-            .setTitle("Доступне оновлення")
-            .setMessage("Вийшла нова версія додатку ($versionName). Будь ласка, оновіть його для стабільної роботи.")
-            .setPositiveButton("Оновити") { _, _ ->
-                // Передаем версию в функцию скачивания
-                downloadAndInstallApk(downloadUrl, versionName)
-            }
-            .setNegativeButton("Пізніше", null)
-            .setCancelable(false)
-            .show()
-    }
-
-    private fun downloadAndInstallApk(apkUrl: String, versionName: String) {
-        Toast.makeText(this, "Завантаження почалося...", Toast.LENGTH_SHORT).show()
-
-        // Добавляем версию в имя файла, чтобы избежать ошибки перезаписи
-        val fileName = "restify_partner_update_$versionName.apk"
-        val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val uri = Uri.parse(apkUrl)
-
-        val request = DownloadManager.Request(uri)
-            .setTitle("Оновлення Restify Partner")
-            .setDescription("Завантаження нової версії...")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-
-        // Видаляємо старий файл оновлення з таким же іменем, якщо він там залишився
-        val file = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fileName)
-        if (file.exists()) file.delete()
-
-        val downloadId = downloadManager.enqueue(request)
-
-        // Слухаємо, коли завантаження завершиться, щоб запустити встановлення
-        val onComplete = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                if (id == downloadId) {
-                    installApk(file)
-                    unregisterReceiver(this)
-                }
-            }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(onComplete, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
-        }
-    }
-
-    private fun installApk(apkFile: File) {
-        try {
-            val apkUri = FileProvider.getUriForFile(
-                this,
-                "${applicationContext.packageName}.provider",
-                apkFile
-            )
-
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Помилка встановлення APK: ${e.message}")
-            Toast.makeText(this, "Не вдалося відкрити інсталятор", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    // --------------------------------
 
     private fun askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
