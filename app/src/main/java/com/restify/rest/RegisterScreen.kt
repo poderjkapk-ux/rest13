@@ -1,5 +1,6 @@
 package com.restify.rest
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.*
@@ -46,22 +47,29 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
     val scrollState = rememberScrollState()
 
     val isLoading by viewModel.isLoading
-    val errorMessage by viewModel.errorMessage
-    val verifLink by viewModel.verificationLink
+    val errorMessage = viewModel.errorMessage
     val isPhoneVerified by viewModel.isPhoneVerified
     val verifiedPhone by viewModel.verifiedPhone
 
+    // ЛОКАЛЬНИЙ СТАН ЗАВАНТАЖЕННЯ ДЛЯ КНОПКИ ТЕЛЕГРАМ
+    var isTgLoading by remember { mutableStateOf(false) }
+
     // Ініціалізація Telegram при відкритті екрану
     LaunchedEffect(Unit) {
-        viewModel.isPhoneVerified.value = false
-        viewModel.verifiedPhone.value = null
-        viewModel.initVerification()
+        if (viewModel.verificationToken.value == null) {
+            viewModel.isPhoneVerified.value = false
+            viewModel.verifiedPhone.value = null
+            viewModel.initVerification()
+        } else if (!viewModel.isPhoneVerified.value) {
+            // Якщо токен вже є (повернулися з TG), відновлюємо поллінг
+            viewModel.startVerificationPolling()
+        }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState) // Додано можливість скролу
+            .verticalScroll(scrollState)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -94,16 +102,74 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
                     Text("Для захисту від ботів підтвердіть номер", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
                     Button(
                         onClick = {
-                            verifLink?.let { link ->
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)))
-                                viewModel.startVerificationPolling()
+                            coroutineScope.launch {
+                                isTgLoading = true
+                                viewModel.errorMessage.value = null
+
+                                // Якщо лінк ще не завантажився (або була помилка), робимо запит ПРЯМО ТУТ
+                                if (viewModel.verificationLink.value == null) {
+                                    try {
+                                        val response = RetrofitClient.apiService.initVerification()
+                                        if (response.isSuccessful && response.body() != null) {
+                                            viewModel.verificationToken.value = response.body()?.token
+                                            viewModel.verificationLink.value = response.body()?.link
+                                        } else {
+                                            viewModel.errorMessage.value = "Помилка сервера. Спробуйте ще раз."
+                                            isTgLoading = false
+                                            return@launch
+                                        }
+                                    } catch (e: Exception) {
+                                        viewModel.errorMessage.value = "Помилка мережі. Перевірте інтернет."
+                                        isTgLoading = false
+                                        return@launch
+                                    }
+                                }
+
+                                // Тепер 100% маємо лінк
+                                val link = viewModel.verificationLink.value
+                                if (link != null) {
+                                    var telegramLink = link
+
+                                    // ПЕРЕТВОРЕННЯ В ПРЯМИЙ DEEPLINK (tg://)
+                                    if (telegramLink.contains("t.me/")) {
+                                        val path = telegramLink.substringAfter("t.me/")
+                                        val parts = path.split("?")
+                                        val botUsername = parts[0].replace("/", "")
+                                        val startParam = if (parts.size > 1) "&${parts[1]}" else ""
+                                        telegramLink = "tg://resolve?domain=$botUsername$startParam"
+                                    } else if (!telegramLink.startsWith("http") && !telegramLink.startsWith("tg://")) {
+                                        telegramLink = "tg://resolve?domain=$telegramLink"
+                                    }
+
+                                    // БЕЗПЕЧНИЙ ЗАПУСК
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(telegramLink))
+                                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        try {
+                                            intent.setPackage("org.telegram.messenger")
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            intent.setPackage(null)
+                                            context.startActivity(intent)
+                                        }
+                                        viewModel.startVerificationPolling()
+                                    } catch (e: Exception) {
+                                        viewModel.errorMessage.value = "Telegram не встановлено на цьому пристрої."
+                                    }
+                                }
+                                isTgLoading = false
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24A1DE))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24A1DE)),
+                        enabled = !isTgLoading
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Підтвердити в Telegram")
+                        if (isTgLoading) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Підтвердити в Telegram")
+                        }
                     }
                 }
             }
@@ -118,7 +184,7 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
         )
         Spacer(Modifier.height(12.dp))
 
-        // Автокомпліт адреси (Оновлено під нову архітектуру)
+        // Автокомпліт адреси
         ExposedDropdownMenuBox(
             expanded = isDropdownExpanded,
             onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
@@ -130,7 +196,7 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
                     isDropdownExpanded = true
                     searchJob?.cancel()
                     searchJob = coroutineScope.launch {
-                        delay(600) // Чекаємо 600мс після останнього вводу
+                        delay(600)
                         viewModel.searchAddress(newValue)
                     }
                 },
@@ -142,14 +208,12 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
                 singleLine = true
             )
 
-            // Випадаючий список з результатами пошуку
             if (searchResults.isNotEmpty()) {
                 ExposedDropdownMenu(
                     expanded = isDropdownExpanded,
                     onDismissRequest = { isDropdownExpanded = false }
                 ) {
                     searchResults.forEach { suggestion ->
-                        // Формуємо коротку адресу (Вулиця, Будинок, Місто)
                         val shortAddressName = suggestion.address?.let { addr ->
                             val road = addr.road.orEmpty()
                             val houseNumber = addr.houseNumber.orEmpty()
@@ -162,7 +226,7 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
                             onClick = {
                                 addressQuery = shortAddressName
                                 isDropdownExpanded = false
-                                viewModel.searchAddress("") // Очищаємо результати
+                                viewModel.searchAddress("")
                             }
                         )
                     }
@@ -189,7 +253,7 @@ fun RegisterScreen(viewModel: MainViewModel, onNavigateBack: () -> Unit, onRegis
             shape = RoundedCornerShape(12.dp)
         )
 
-        errorMessage?.let {
+        errorMessage.value?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
         }
 
