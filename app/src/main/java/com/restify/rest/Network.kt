@@ -234,7 +234,6 @@ interface RestPartnerApi {
 
 // --- ОКРЕМИЙ ІНТЕРФЕЙС ДЛЯ OPENSTREETMAP ---
 interface NominatimApi {
-    // ДОБАВЛЕН ЗАГОЛОВОК USER-AGENT, ЧТОБЫ СЕРВЕР НЕ БЛОКИРОВАЛ ЗАПРОСЫ
     @Headers("User-Agent: RestifyPartnerApp/1.0")
     @GET("search?format=json&accept-language=uk,ru&countrycodes=ua&addressdetails=1&viewbox=30.0,46.8,31.3,45.8&bounded=0&limit=5")
     suspend fun searchAddress(@Query("q") query: String): Response<List<NominatimResult>>
@@ -251,6 +250,10 @@ class PartnerWebSocketManager(private val client: OkHttpClient) {
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val messages = _messages.asSharedFlow()
 
+    // НОВЕ: Flow для сигналізації про протухлий токен
+    private val _authErrors = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val authErrors = _authErrors.asSharedFlow()
+
     private var currentCookie: String? = null
     private var isIntentionallyClosed = false
 
@@ -263,6 +266,11 @@ class PartnerWebSocketManager(private val client: OkHttpClient) {
         startConnection()
     }
 
+    // НОВЕ: Метод для виклику помилки авторизації з інших місць
+    fun triggerAuthError() {
+        _authErrors.tryEmit(Unit)
+    }
+
     private fun startConnection() {
         if (webSocket != null) return
         val cookie = currentCookie ?: return
@@ -273,7 +281,6 @@ class PartnerWebSocketManager(private val client: OkHttpClient) {
             .build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            // ЯВНО ВКАЗУЄМО okhttp3.Response ТУТ:
             override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
                 Log.d("PartnerWebSocket", "Connected")
                 startPingJob()
@@ -287,20 +294,34 @@ class PartnerWebSocketManager(private val client: OkHttpClient) {
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d("PartnerWebSocket", "Closed: $reason")
+                Log.d("PartnerWebSocket", "Closed: $code $reason")
                 this@PartnerWebSocketManager.webSocket = null
                 stopPingJob()
 
-                if (!isIntentionallyClosed && code != 1008) {
+                // НОВЕ: Якщо бекенд закрив з кодом 1008 (Policy Violation)
+                // або токен невалідний
+                if (code == 1008 || code == 401 || code == 403) {
+                    Log.e("PartnerWebSocket", "Auth error ($code). Stopping reconnects.")
+                    triggerAuthError()
+                    return // ВАЖЛИВО: Зупиняємо цикл реконектів
+                }
+
+                if (!isIntentionallyClosed) {
                     scheduleReconnect()
                 }
             }
 
-            // ЯВНО ВКАЗУЄМО okhttp3.Response ТУТ:
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
                 Log.e("PartnerWebSocket", "Error", t)
                 this@PartnerWebSocketManager.webSocket = null
                 stopPingJob()
+
+                // НОВЕ: Перевіряємо статус код при handshake
+                if (response?.code() == 401 || response?.code() == 403) {
+                    Log.e("PartnerWebSocket", "Handshake Auth Failed (401/403). Stopping reconnects.")
+                    triggerAuthError()
+                    return // ВАЖЛИВО: Зупиняємо цикл реконектів
+                }
 
                 if (!isIntentionallyClosed) {
                     scheduleReconnect()
@@ -354,10 +375,32 @@ class PartnerWebSocketManager(private val client: OkHttpClient) {
 object RetrofitClient {
     private const val BASE_URL = "https://restify.site"
 
+    // Ініціалізуємо webSocketManager відразу (але без клієнта поки що)
+    lateinit var webSocketManager: PartnerWebSocketManager
+
+    // НОВЕ: Глобальний перехоплювач помилок 401/403 для Retrofit API
+    private val authInterceptor = okhttp3.Interceptor { chain ->
+        val request = chain.request()
+        val response = chain.proceed(request)
+        // Якщо будь-який API запит повертає 401 або 403, запалюємо подію
+        if (response.code() == 401 || response.code() == 403) {
+            if (::webSocketManager.isInitialized) {
+                webSocketManager.triggerAuthError()
+            }
+        }
+        response
+    }
+
     private val okHttpClient = OkHttpClient.Builder()
         .followRedirects(false)
         .followSslRedirects(false)
+        .addInterceptor(authInterceptor) // Додали перехоплювач сюди
         .build()
+
+    init {
+        // Прив'язуємо клієнт до WS менеджера
+        webSocketManager = PartnerWebSocketManager(okHttpClient)
+    }
 
     val apiService: RestPartnerApi by lazy {
         Retrofit.Builder()
@@ -376,6 +419,4 @@ object RetrofitClient {
             .build()
             .create(NominatimApi::class.java)
     }
-
-    val webSocketManager = PartnerWebSocketManager(okHttpClient)
 }

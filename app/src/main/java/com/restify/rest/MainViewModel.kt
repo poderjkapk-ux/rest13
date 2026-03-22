@@ -87,6 +87,16 @@ class MainViewModel(
                 }
             }
         }
+
+        // --- НОВЕ: СЛУХАЄМО ПОМИЛКИ АВТОРИЗАЦІЇ (ПРОТУХЛИЙ ТОКЕН) ---
+        viewModelScope.launch {
+            RetrofitClient.webSocketManager.authErrors.collect {
+                Log.e("MainViewModel", "Виявлено помилку авторизації (401/403). Примусовий вихід.")
+                // Робимо логаут, що очистить кукі, перерве всі підключення
+                // і реактивно викине користувача на екран логіну завдяки Compose
+                logout()
+            }
+        }
     }
 
     // --- ПІДКЛЮЧЕННЯ WEBSOCKET З КУКАМИ СЕСІЇ ---
