@@ -1,5 +1,6 @@
 package com.restify.rest
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -22,12 +24,17 @@ import androidx.compose.ui.unit.sp
 fun LoginScreen(
     viewModel: MainViewModel,
     onLoginSuccess: () -> Unit,
-    onNavigateToRegister: () -> Unit // Додано параметр для навігації на екран реєстрації
+    onNavigateToRegister: () -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
+    // Стан для діалогу відновлення пароля
+    var showResetDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
+
     val scrollState = rememberScrollState()
+    val context = LocalContext.current // Для показу Toast повідомлень
 
     val isLoading = viewModel.isLoading.value
     val errorMessage = viewModel.errorMessage.value
@@ -96,9 +103,23 @@ fun LoginScreen(
             }
         }
 
-        // --- НОВА КНОПКА ДЛЯ ПЕРЕХОДУ НА РЕЄСТРАЦІЮ ---
         Spacer(modifier = Modifier.height(16.dp))
 
+        // --- КНОПКА: ЗАБУЛИ ПАРОЛЬ ---
+        TextButton(onClick = {
+            resetEmail = email // Підставляємо введений email, якщо є
+            showResetDialog = true
+        }) {
+            Text(
+                text = "Забули пароль?",
+                color = MaterialTheme.colorScheme.secondary,
+                fontWeight = FontWeight.Normal
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // --- КНОПКА: ПЕРЕХІД НА РЕЄСТРАЦІЮ ---
         TextButton(onClick = onNavigateToRegister) {
             Text(
                 text = "Немає акаунту? Створити",
@@ -106,5 +127,61 @@ fun LoginScreen(
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+
+    // --- ДІАЛОГ ВІДНОВЛЕННЯ ПАРОЛЯ ---
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text(text = "Відновлення пароля", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        text = "Введіть ваш Email. Новий пароль буде відправлено у ваш підключений Telegram-бот.",
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = resetEmail,
+                        onValueChange = { resetEmail = it },
+                        label = { Text("Ваш Email") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.resetPassword(
+                            email = resetEmail.trim(),
+                            onSuccess = { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                showResetDialog = false
+                            },
+                            onError = { err ->
+                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    },
+                    enabled = resetEmail.isNotBlank() && !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Відновити")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showResetDialog = false },
+                    enabled = !isLoading
+                ) {
+                    Text("Скасувати")
+                }
+            }
+        )
     }
 }

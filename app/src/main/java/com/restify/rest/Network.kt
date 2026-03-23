@@ -140,6 +140,13 @@ interface RestPartnerApi {
         @Field("password") password: String
     ): Response<Unit>
 
+    // --- НОВИЙ ЕНДПОІНТ: ВІДНОВЛЕННЯ ПАРОЛЯ ---
+    @FormUrlEncoded
+    @POST("/api/partner/reset_password")
+    suspend fun resetPassword(
+        @Field("email") email: String
+    ): Response<Unit>
+
     // --- ПРОФІЛЬ ---
     @GET("/api/partner/profile_native")
     suspend fun getPartnerProfile(): Response<PartnerProfile>

@@ -224,7 +224,7 @@ class MainViewModel(
     }
 
     // ==========================================================
-    // ЛОГІКА АВТОРИЗАЦІЇ
+    // ЛОГІКА АВТОРИЗАЦІЇ ТА ВІДНОВЛЕННЯ ПАРОЛЯ
     // ==========================================================
 
     fun login(email: String, pass: String, onSuccess: () -> Unit) {
@@ -247,6 +247,32 @@ class MainViewModel(
                 }
             } catch (e: Exception) {
                 errorMessage.value = "Помилка мережі: ${e.message}"
+            } finally {
+                isLoading.value = false
+            }
+        }
+    }
+
+    // --- НОВА ФУНКЦІЯ: Відновлення пароля ---
+    fun resetPassword(email: String, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            isLoading.value = true
+            try {
+                val response = api.resetPassword(email)
+                if (response.isSuccessful) {
+                    onSuccess("Успіх! Новий пароль відправлено у ваш Telegram-бот.")
+                } else {
+                    // Парсимо JSON помилки з бекенда (напр., "Заклад з таким Email не знайдено.")
+                    val errorStr = response.errorBody()?.string()
+                    val detail = try {
+                        JSONObject(errorStr ?: "").getString("detail")
+                    } catch (e: Exception) {
+                        "Невідома помилка"
+                    }
+                    onError("Помилка: $detail")
+                }
+            } catch (e: Exception) {
+                onError("Помилка з'єднання з сервером")
             } finally {
                 isLoading.value = false
             }
