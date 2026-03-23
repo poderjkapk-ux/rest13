@@ -323,9 +323,12 @@ class PartnerWebSocketManager(private val client: OkHttpClient) {
                 this@PartnerWebSocketManager.webSocket = null
                 stopPingJob()
 
-                // НОВЕ: Перевіряємо статус код при handshake
-                if (response?.code() == 401 || response?.code() == 403) {
-                    Log.e("PartnerWebSocket", "Handshake Auth Failed (401/403). Stopping reconnects.")
+                // ВИПРАВЛЕНО: Витягуємо код із захистом від null
+                val httpCode = response?.code() ?: 0
+
+                // Перевіряємо статус код при handshake
+                if (httpCode == 401 || httpCode == 403) {
+                    Log.e("PartnerWebSocket", "Handshake Auth Failed ($httpCode). Stopping reconnects.")
                     triggerAuthError()
                     return // ВАЖЛИВО: Зупиняємо цикл реконектів
                 }
