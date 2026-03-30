@@ -9,8 +9,8 @@ import android.preference.PreferenceManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,7 +28,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -526,6 +528,7 @@ fun OrderCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // НОВЫЙ БЛОК: Красивая анимация поиска и функциональные кнопки
             if (order.status == "pending") {
                 val interactionSource = remember { MutableInteractionSource() }
                 val isPressed by interactionSource.collectIsPressedAsState()
@@ -538,74 +541,155 @@ fun OrderCard(
                     label = "buttonScale"
                 )
 
+                // Сброс состояния анимации загрузки
                 LaunchedEffect(order) {
                     isBoosting = false
+                    // isCancelProcessing сбрасывается в начале OrderCard
                 }
 
-                Button(
-                    onClick = {
-                        if (!isBoosting) {
-                            isBoosting = true
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onBoostClick()
-                        }
-                    },
-                    interactionSource = interactionSource,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .padding(bottom = 8.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                        },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B), contentColor = Color.White),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp, pressedElevation = 0.dp)
-                ) {
-                    if (isBoosting) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            modifier = Modifier.size(26.dp),
-                            strokeWidth = 3.dp
-                        )
-                    } else {
-                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("ПІДНЯТИ ЦІНУ (+10 ГРН)", fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // ДОДАНО: Кнопка скасування замовлення (поки кур'єр не прийняв)
-                Button(
-                    onClick = {
-                        isCancelProcessing = true
-                        onCancelClick()
-                    },
-                    enabled = !isCancelProcessing,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                        disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                // Настройка бесконечной анимации пульсации (эффект радара)
+                val infiniteTransition = rememberInfiniteTransition(label = "pulse_transition")
+                val pulseScale by infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.8f, // Насколько сильно расширяется круг
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Restart
                     ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                    label = "pulse_scale"
+                )
+                val pulseAlpha by infiniteTransition.animateFloat(
+                    initialValue = 0.5f,
+                    targetValue = 0f, // Плавно растворяется в конце
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "pulse_alpha"
+                )
+
+                // Контейнер статуса "В поиске"
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
                 ) {
-                    if (isCancelProcessing) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.onError,
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Блок с анимированной иконкой
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+                            // Анимированный пульсирующий круг
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .scale(pulseScale)
+                                    .alpha(pulseAlpha)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+                            )
+                            // Статичный внутренний круг с иконкой
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(48.dp),
+                                shadowElevation = 6.dp
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Пошук",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Шукаємо кур'єра...",
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 17.sp,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("СКАСУВАННЯ...", fontWeight = FontWeight.Bold)
-                    } else {
-                        Icon(Icons.Default.Close, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("СКАСУВАТИ ЗАМОВЛЕННЯ", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Зазвичай це займає 1-3 хвилини",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
+                        )
+
+                        // Ряд с кнопками управления заказом
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Кнопка отмены (Outline - чтобы не перетягивала внимание)
+                            OutlinedButton(
+                                onClick = {
+                                    isCancelProcessing = true
+                                    onCancelClick()
+                                },
+                                enabled = !isCancelProcessing,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                if (isCancelProcessing) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text("СКАСУВАТИ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+
+                            // Кнопка поднятия цены (Акцентная)
+                            Button(
+                                onClick = {
+                                    if (!isBoosting) {
+                                        isBoosting = true
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onBoostClick()
+                                    }
+                                },
+                                interactionSource = interactionSource,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFF59E0B),
+                                    contentColor = Color.White
+                                ),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 0.dp)
+                            ) {
+                                if (isBoosting) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("+10 ГРН", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                            }
+                        }
                     }
                 }
             }
