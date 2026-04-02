@@ -40,15 +40,21 @@ import org.osmdroid.views.MapView
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
+    // Отримуємо мінімальну ціну та причину з ViewModel
+    val minFee by viewModel.minFee.collectAsState()
+    val feeReason by viewModel.feeReason.collectAsState()
+
     var address by remember { mutableStateOf("") }
     var customerName by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
-    var fee by remember { mutableStateOf("80") } // Значення за замовчуванням
+
+    // fee тепер оновлюється автоматично через LaunchedEffect
+    var fee by remember { mutableStateOf("") }
     var comment by remember { mutableStateOf("") }
     var paymentType by remember { mutableStateOf("prepaid") }
 
-    // --- НОВИЙ СТЕЙТ ДЛЯ ЧАСУ ПРИГОТУВАННЯ (за замовчуванням 15) ---
+    // --- СТЕЙТ ДЛЯ ЧАСУ ПРИГОТУВАННЯ (за замовчуванням 15) ---
     var prepTime by remember { mutableStateOf(15) }
 
     // Состояние для интерактивной кнопки
@@ -90,6 +96,24 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
         focusedLabelColor = primaryAccent,
         unfocusedLabelColor = textSecondaryColor
     )
+
+    // 1. ПОСТІЙНЕ ОНОВЛЕННЯ "НА ЛЬОТУ":
+    // Цей блок перевіряє ціну з бекенду кожні 15 секунд, поки відкрито екран
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.fetchMinFee()
+            delay(15000) // 15 секунд
+        }
+    }
+
+    // 2. АВТОМАТИЧНА ПІДСТАНОВКА:
+    // Якщо прийшла нова ціна, і вона більша за те, що введено — оновлюємо поле
+    LaunchedEffect(minFee) {
+        val currentFee = fee.toDoubleOrNull() ?: 0.0
+        if (fee.isEmpty() || fee == "80" || currentFee == 80.0 || currentFee < minFee) {
+            fee = if (minFee % 1 == 0.0) minFee.toInt().toString() else minFee.toString()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -192,6 +216,33 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Деталі замовлення", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = textSecondaryColor)
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // === БЛОК: ДИНАМІЧНА ВАРТІСТЬ (АЛЕРТ) ===
+                if (minFee > 80.0 || feeReason.isNotEmpty()) {
+                    val reasonText = if (feeReason.isNotEmpty()) " Причина: $feeReason" else ""
+                    val displayMinFee = if (minFee % 1 == 0.0) minFee.toInt().toString() else minFee.toString()
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .background(Color(0x33EF4444), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0xFFEF4444), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(Icons.Outlined.Warning, contentDescription = null, tint = Color(0xFFFCA5A5), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Увага: Мінімальна доставка зараз $displayMinFee грн.$reasonText",
+                                fontSize = 13.sp,
+                                color = Color(0xFFFCA5A5),
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+                // ============================================
 
                 OutlinedTextField(
                     value = customerName,
@@ -304,7 +355,7 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // --- НОВИЙ БЛОК: ЧАС ПРИГОТУВАННЯ ---
+        // --- БЛОК: ЧАС ПРИГОТУВАННЯ ---
         PremiumCard(cardColor = cardColor) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -377,10 +428,10 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
             onClick = {
                 isSubmitting = true
 
-                // Читаємо введену суму. Якщо порожньо або помилка - ставимо 80.0
-                val parsedFee = fee.toDoubleOrNull() ?: 80.0
-                // Примусово не даємо опустити ціну нижче 80.0
-                val finalFee = if (parsedFee < 80.0) 80.0 else parsedFee
+                // Читаємо введену суму. Якщо порожньо або помилка - ставимо minFee
+                val parsedFee = fee.toDoubleOrNull() ?: minFee
+                // Примусово не даємо опустити ціну нижче minFee
+                val finalFee = if (parsedFee < minFee) minFee else parsedFee
 
                 val request = OrderCreateRequest(
                     address = address,

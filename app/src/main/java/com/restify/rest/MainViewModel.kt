@@ -31,6 +31,13 @@ class MainViewModel(
     private val _restaurantAddress = MutableStateFlow(prefs.getString("rest_address", "") ?: "")
     val restaurantAddress: StateFlow<String> = _restaurantAddress.asStateFlow()
 
+    // --- СТАНИ ДЛЯ ДИНАМІЧНОЇ ВАРТОСТІ ДОСТАВКИ ---
+    private val _minFee = MutableStateFlow(80.0)
+    val minFee: StateFlow<Double> = _minFee.asStateFlow()
+
+    private val _feeReason = MutableStateFlow("")
+    val feeReason: StateFlow<String> = _feeReason.asStateFlow()
+
     private val _orders = MutableStateFlow<List<PartnerOrder>>(emptyList())
     val orders: StateFlow<List<PartnerOrder>> = _orders
 
@@ -61,6 +68,7 @@ class MainViewModel(
         // Якщо при запуску додатку ми вже авторизовані — одразу вантажимо дані та підключаємо WebSocket
         if (_isLoggedIn.value) {
             fetchPartnerProfile() // Завантажуємо дані профілю (назву і адресу)
+            fetchMinFee()         // ЗАВАНТАЖУЄМО МІНІМАЛЬНУ ЦІНУ
             fetchOrders()
             connectWebSocket()
         }
@@ -109,7 +117,7 @@ class MainViewModel(
     }
 
     // ==========================================================
-    // ЛОГІКА ПРОФІЛЮ (ОТРИМАННЯ НАЗВИ ТА АДРЕСИ)
+    // ЛОГІКА ПРОФІЛЮ ТА МІНІМАЛЬНОЇ ЦІНИ
     // ==========================================================
 
     fun fetchPartnerProfile() {
@@ -129,6 +137,20 @@ class MainViewModel(
                 }
             } catch (e: Exception) {
                 Log.e("Profile", "Помилка завантаження профілю: ${e.message}")
+            }
+        }
+    }
+
+    fun fetchMinFee() {
+        viewModelScope.launch {
+            try {
+                val response = api.getMinFee()
+                if (response.isSuccessful && response.body() != null) {
+                    _minFee.value = response.body()?.minFee ?: 80.0
+                    _feeReason.value = response.body()?.reason ?: ""
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error fetching min fee: ${e.message}")
             }
         }
     }
@@ -238,8 +260,9 @@ class MainViewModel(
                     _isLoggedIn.value = true
 
                     fetchPartnerProfile() // ЗАВАНТАЖУЄМО ПРОФІЛЬ
+                    fetchMinFee()         // ЗАВАНТАЖУЄМО МІНІМАЛЬНУ ЦІНУ
                     fetchOrders()
-                    connectWebSocket() // ПІДКЛЮЧАЄМО WEBSOCKET ПІСЛЯ ЛОГІНУ
+                    connectWebSocket()    // ПІДКЛЮЧАЄМО WEBSOCKET ПІСЛЯ ЛОГІНУ
 
                     onSuccess()
                 } else {
@@ -298,6 +321,9 @@ class MainViewModel(
         pollingJob = viewModelScope.launch {
             while (true) {
                 try {
+                    // ОНОВЛЮЄМО ЦІНУ РАЗОМ ІЗ ПОЛІНГОМ (НА ЛЬОТУ)
+                    fetchMinFee()
+
                     val response = api.getOrders()
                     if (response.isSuccessful) {
                         _orders.value = response.body() ?: emptyList()
@@ -322,6 +348,8 @@ class MainViewModel(
         viewModelScope.launch {
             isLoading.value = true
             try {
+                fetchMinFee() // ДОДАНО: Завжди оновлюємо ціну, якщо оновлюємо список
+
                 val response = api.getOrders()
                 if (response.isSuccessful) {
                     _orders.value = response.body() ?: emptyList()

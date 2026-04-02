@@ -111,6 +111,12 @@ data class PartnerProfile(
     val address: String
 )
 
+// --- НОВА МОДЕЛЬ ДЛЯ ДИНАМІЧНОЇ ЦІНИ ДОСТАВКИ ---
+data class MinFeeResponse(
+    val status: String,
+    @SerializedName("min_fee") val minFee: Double,
+    val reason: String
+)
 
 // Интерфейс API для заведения (Основний бекенд)
 interface RestPartnerApi {
@@ -150,6 +156,10 @@ interface RestPartnerApi {
     // --- ПРОФІЛЬ ---
     @GET("/api/partner/profile_native")
     suspend fun getPartnerProfile(): Response<PartnerProfile>
+
+    // --- НОВИЙ ЕНДПОІНТ: ДИНАМІЧНА ВАРТІСТЬ ДОСТАВКИ ---
+    @GET("/api/partner/min_fee_native")
+    suspend fun getMinFee(): Response<MinFeeResponse>
 
     // --- ЗАМОВЛЕННЯ ---
 
