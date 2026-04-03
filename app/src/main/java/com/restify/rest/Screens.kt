@@ -760,7 +760,7 @@ fun OrderCard(
                         Text("Готово. Очікує кур'єра", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            } else if (order.status.lowercase() == "delivered" && !isRated) {
+            } else if (order.status.lowercase() == "delivered" && !isRated && order.isRatedBackend != true) {
                 Button(
                     onClick = onRateClick,
                     modifier = Modifier

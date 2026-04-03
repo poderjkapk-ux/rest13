@@ -531,9 +531,25 @@ class MainViewModel(
             try {
                 val response = api.rateCourier(jobId, rating, review)
                 if (response.isSuccessful) {
+                    // Успіх: локально ховаємо кнопку
                     _ratedOrders.value = _ratedOrders.value + jobId
                     fetchOrders()
-                } else errorMessage.value = "Помилка при відправці оцінки"
+                } else {
+                    // Читаємо повідомлення про помилку від сервера
+                    val errorStr = response.errorBody()?.string()
+                    val serverMessage = try {
+                        org.json.JSONObject(errorStr ?: "").getString("message")
+                    } catch (e: Exception) {
+                        "Помилка при відправці оцінки"
+                    }
+
+                    errorMessage.value = serverMessage
+
+                    // Якщо сервер повернув 400 (відгук вже існує) — примусово ховаємо кнопку
+                    if (response.code() == 400) {
+                        _ratedOrders.value = _ratedOrders.value + jobId
+                    }
+                }
             } catch (e: Exception) {
                 errorMessage.value = "Помилка мережі"
             }

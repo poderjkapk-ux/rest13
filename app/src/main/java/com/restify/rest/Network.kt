@@ -67,6 +67,7 @@ data class PartnerOrder(
     @SerializedName("payment_type") val paymentType: String,
     @SerializedName("is_ready") val isReady: Boolean,
     @SerializedName("is_return_required") val isReturnRequired: Boolean,
+    @SerializedName("is_rated") val isRatedBackend: Boolean? = false,
     val courier: CourierInfo?
 )
 
