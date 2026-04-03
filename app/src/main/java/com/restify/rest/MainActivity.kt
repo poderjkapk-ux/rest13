@@ -17,9 +17,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
@@ -305,8 +307,8 @@ fun MainAppScreen(viewModel: MainViewModel) {
                             // Кнопка підтримки (виклик адміністратора)
                             IconButton(onClick = { showSupportDialog = true }) {
                                 Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = "Підтримка"
+                                    imageVector = Icons.Default.Email, // Змінено на іконку конверта
+                                    contentDescription = "Написати в підтримку"
                                 )
                             }
 
@@ -437,18 +439,22 @@ fun MainAppScreen(viewModel: MainViewModel) {
     // Виклик діалогу підтримки, якщо стан true
     if (showSupportDialog) {
         SupportDialog(
+            viewModel = viewModel, // Передаємо viewModel сюди
             onDismiss = { showSupportDialog = false }
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SupportDialog(onDismiss: () -> Unit) {
+fun SupportDialog(viewModel: MainViewModel, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    var messageText by remember { mutableStateOf("") }
+    var isSending by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
@@ -457,15 +463,31 @@ fun SupportDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Красива кругла іконка зверху
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Email,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 Text(
-                    text = "Підтримка",
+                    text = "Служба підтримки",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Зв'яжіться з адміністратором для вирішення питань",
+                    text = "Опишіть вашу проблему або питання. Адміністратор отримає повідомлення та зв'яжеться з вами.",
                     fontSize = 14.sp,
                     color = Color.Gray,
                     textAlign = TextAlign.Center
@@ -473,43 +495,69 @@ fun SupportDialog(onDismiss: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Кнопка зателефонувати
+                // Поле для вводу тексту
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    label = { Text("Ваше повідомлення") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    maxLines = 5,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = Color.LightGray
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Кнопка "Надіслати"
                 Button(
                     onClick = {
-                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:0998120395"))
-                        context.startActivity(intent)
+                        if (messageText.isNotBlank()) {
+                            isSending = true
+                            viewModel.submitFeedback(
+                                message = messageText,
+                                onSuccess = {
+                                    isSending = false
+                                    Toast.makeText(context, "Повідомлення відправлено адміну!", Toast.LENGTH_SHORT).show()
+                                    onDismiss() // Закриваємо діалог після успіху
+                                },
+                                onError = { errorMsg ->
+                                    isSending = false
+                                    Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        } else {
+                            Toast.makeText(context, "Будь ласка, введіть текст", Toast.LENGTH_SHORT).show()
+                        }
                     },
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    enabled = !isSending && messageText.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(Icons.Default.Phone, contentDescription = "Зателефонувати", tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Зателефонувати", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                    if (isSending) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.Send, contentDescription = "Надіслати", tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Надіслати", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Кнопка Telegram
-                Button(
-                    onClick = {
-                        // Відкриваємо Telegram через посилання
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/restify_od"))
-                        context.startActivity(intent)
-                    },
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF24A1DE)) // Фірмовий колір Telegram
-                ) {
-                    Icon(Icons.Default.Send, contentDescription = "Telegram", tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Написати в Telegram", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                TextButton(onClick = onDismiss) {
-                    Text("Закрити", color = Color.Gray, fontWeight = FontWeight.Medium)
+                TextButton(onClick = onDismiss, enabled = !isSending) {
+                    Text("Скасувати", color = Color.Gray, fontWeight = FontWeight.Medium)
                 }
             }
         }

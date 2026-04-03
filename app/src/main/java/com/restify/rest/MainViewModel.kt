@@ -588,4 +588,38 @@ class MainViewModel(
             }
         }
     }
+
+    // ==========================================================
+    // ЛОГІКА ПІДТРИМКИ (ЗВОРОТНИЙ ЗВ'ЯЗОК)
+    // ==========================================================
+
+    fun submitFeedback(message: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            isLoading.value = true
+            try {
+                // Беремо назву закладу та адресу з кешу (якщо є)
+                val restName = _restaurantName.value.takeIf { it.isNotBlank() } ?: "Невідомий заклад"
+                val restAddress = _restaurantAddress.value.takeIf { it.isNotBlank() } ?: "Невідома адреса"
+
+                val response = api.submitFeedback(
+                    role = "Заклад",
+                    name = restName,
+                    // Оскільки ми не зберігаємо телефон в кеші додатку, передамо адресу,
+                    // щоб адміністратор бачив, з якого закладу пишуть
+                    phone = restAddress,
+                    message = message
+                )
+
+                if (response.isSuccessful) {
+                    onSuccess()
+                } else {
+                    onError("Помилка відправки. Спробуйте пізніше.")
+                }
+            } catch (e: Exception) {
+                onError("Помилка мережі: ${e.message}")
+            } finally {
+                isLoading.value = false
+            }
+        }
+    }
 }

@@ -248,6 +248,16 @@ interface RestPartnerApi {
     suspend fun sendFcmToken(
         @Field("token") token: String
     ): Response<Unit>
+
+    // --- ЕНДПОІНТ ДЛЯ ЗВОРОТНОГО ЗВ'ЯЗКУ (ПІДТРИМКА) ---
+    @FormUrlEncoded
+    @POST("/api/feedback")
+    suspend fun submitFeedback(
+        @Field("role") role: String,
+        @Field("name") name: String,
+        @Field("phone") phone: String,
+        @Field("message") message: String
+    ): Response<Unit>
 }
 
 // --- ОКРЕМИЙ ІНТЕРФЕЙС ДЛЯ OPENSTREETMAP ---
