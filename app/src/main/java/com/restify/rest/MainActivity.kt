@@ -68,9 +68,21 @@ class MainActivity : ComponentActivity() {
     private val orderUpdateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.restify.rest.UPDATE_ORDERS") {
-                Log.d("MainActivity", "Отримано сигнал для оновлення замовлень")
+                Log.d("MainActivity", "Отримано сигнал для оновлення")
+
                 if (::viewModel.isInitialized) {
+                    // Оновлюємо список замовлень в будь-якому випадку
                     viewModel.fetchOrders()
+
+                    // ДОДАНО: Перевіряємо, чи це пуш саме з чату
+                    val isChat = intent.getBooleanExtra("is_chat", false)
+                    val jobId = intent.getIntExtra("job_id", -1)
+
+                    if (isChat && jobId != -1) {
+                        Log.d("MainActivity", "Отримано пуш чату, оновлюємо повідомлення для job_id: $jobId")
+                        // Завантажуємо свіжу історію чату (UI автоматично перемалюється)
+                        viewModel.loadChatHistory(jobId)
+                    }
                 }
             }
         }
