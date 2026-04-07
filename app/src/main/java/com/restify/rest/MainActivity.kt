@@ -283,6 +283,9 @@ fun MainAppScreen(viewModel: MainViewModel) {
     // Стан для відображення вікна підтримки
     var showSupportDialog by remember { mutableStateOf(false) }
 
+    // Стан для діалогу підтвердження виходу
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
     // Відслідковуємо стан авторизації для правильної навігації при виході
     LaunchedEffect(isLoggedIn) {
         if (!isLoggedIn && !isFirstLaunch) {
@@ -325,7 +328,7 @@ fun MainAppScreen(viewModel: MainViewModel) {
                             }
 
                             // Кнопка виходу
-                            IconButton(onClick = { viewModel.logout() }) {
+                            IconButton(onClick = { showLogoutDialog = true }) {
                                 Icon(
                                     imageVector = Icons.Default.ExitToApp,
                                     contentDescription = "Вийти"
@@ -453,6 +456,47 @@ fun MainAppScreen(viewModel: MainViewModel) {
         SupportDialog(
             viewModel = viewModel, // Передаємо viewModel сюди
             onDismiss = { showSupportDialog = false }
+        )
+    }
+
+    // Виклик діалогу підтвердження виходу
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = {
+                Text(
+                    text = "Підтвердження виходу",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Ви дійсно хочете вийти з акаунту?",
+                    fontSize = 16.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        viewModel.logout() // Викликаємо логаут тільки після підтвердження
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Вийти", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLogoutDialog = false }
+                ) {
+                    Text("Скасувати", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface
         )
     }
 }

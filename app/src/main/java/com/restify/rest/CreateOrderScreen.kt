@@ -234,7 +234,7 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                             Icon(Icons.Outlined.Warning, contentDescription = null, tint = Color(0xFFFCA5A5), modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Увага: Мінімальна доставка зараз $displayMinFee грн.$reasonText",
+                                text = "Увага: Мінімальна ціна доставки зараз $displayMinFee грн.$reasonText",
                                 fontSize = 13.sp,
                                 color = Color(0xFFFCA5A5),
                                 lineHeight = 18.sp
