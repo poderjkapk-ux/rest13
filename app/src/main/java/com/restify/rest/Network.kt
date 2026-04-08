@@ -79,6 +79,10 @@ data class CourierInfo(
 
 data class OrderCreateRequest(
     val address: String,
+    val street: String?,        // <-- ДОДАНО ПОЛЕ
+    val houseNumber: String?,   // <-- ДОДАНО ПОЛЕ
+    val apartment: String?,     // <-- ДОДАНО ПОЛЕ
+    val changeFrom: String?,    // <-- ДОДАНО ПОЛЕ
     val customerName: String,
     val phone: String,
     val price: Double,
@@ -171,6 +175,10 @@ interface RestPartnerApi {
     @POST("/api/partner/create_order_native")
     suspend fun createOrder(
         @Field("dropoff_address") address: String,
+        @Field("street") street: String?,             // <-- ДОДАНО
+        @Field("house_number") houseNumber: String?,  // <-- ДОДАНО
+        @Field("apartment") apartment: String?,       // <-- ДОДАНО
+        @Field("change_from") changeFrom: String?,    // <-- ДОДАНО
         @Field("customer_name") customerName: String,
         @Field("customer_phone") phone: String,
         @Field("order_price") price: Double,

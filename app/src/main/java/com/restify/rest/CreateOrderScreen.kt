@@ -44,7 +44,12 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
     val minFee by viewModel.minFee.collectAsState()
     val feeReason by viewModel.feeReason.collectAsState()
 
-    var address by remember { mutableStateOf("") }
+    // НОВІ ПОЛЯ
+    var street by remember { mutableStateOf("") }
+    var houseNumber by remember { mutableStateOf("") }
+    var apartment by remember { mutableStateOf("") }
+    var changeFrom by remember { mutableStateOf("") }
+
     var customerName by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
@@ -67,6 +72,7 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
 
     // Состояние карты и автодополнения
     var mapCenter by remember { mutableStateOf(GeoPoint(46.4825, 30.7233)) } // Одеса за замовчуванням
+    var mapZoom by remember { mutableStateOf(16.0) } // Динамічний зум
     var isDropdownExpanded by remember { mutableStateOf(false) }
 
     // Отримуємо результати пошуку з ViewModel замість прямого HTTP запиту в UI
@@ -98,7 +104,6 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
     )
 
     // 1. ПОСТІЙНЕ ОНОВЛЕННЯ "НА ЛЬОТУ":
-    // Цей блок перевіряє ціну з бекенду кожні 15 секунд, поки відкрито екран
     LaunchedEffect(Unit) {
         while (true) {
             viewModel.fetchMinFee()
@@ -107,11 +112,24 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
     }
 
     // 2. АВТОМАТИЧНА ПІДСТАНОВКА:
-    // Якщо прийшла нова ціна, і вона більша за те, що введено — оновлюємо поле
     LaunchedEffect(minFee) {
         val currentFee = fee.toDoubleOrNull() ?: 0.0
         if (fee.isEmpty() || fee == "80" || currentFee == 80.0 || currentFee < minFee) {
             fee = if (minFee % 1 == 0.0) minFee.toInt().toString() else minFee.toString()
+        }
+    }
+
+    // 3. ТИХИЙ ФОКУС КАРТИ НА БУДИНОК:
+    LaunchedEffect(searchResults) {
+        // Якщо дропдаун закритий, але є результати (це означає, що ми шукали будинок)
+        if (!isDropdownExpanded && searchResults.isNotEmpty() && houseNumber.isNotEmpty()) {
+            val first = searchResults.first()
+            val lat = first.lat.toDoubleOrNull()
+            val lon = first.lon.toDoubleOrNull()
+            if (lat != null && lon != null) {
+                mapCenter = GeoPoint(lat, lon)
+                mapZoom = 18.0 // Близький зум на будинок
+            }
         }
     }
 
@@ -136,25 +154,24 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                 Text("Куди веземо?", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = textSecondaryColor)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Ввод адреса с автодополнением
+                // Ввод вулиці з автодоповненням
                 ExposedDropdownMenuBox(
                     expanded = isDropdownExpanded,
                     onExpandedChange = { isDropdownExpanded = !isDropdownExpanded }
                 ) {
                     OutlinedTextField(
-                        value = address,
+                        value = street,
                         onValueChange = { newValue ->
-                            address = newValue
+                            street = newValue
                             isDropdownExpanded = true
-                            // Debounce логика для поиска
                             searchJob?.cancel()
                             searchJob = coroutineScope.launch {
-                                delay(600) // Ждем 600мс после последнего ввода
-                                viewModel.searchAddress(newValue)
+                                delay(600)
+                                viewModel.searchAddress("$newValue, Одеса")
                             }
                         },
-                        placeholder = { Text("Введіть адресу доставки...", color = textSecondaryColor) },
-                        leadingIcon = { Icon(Icons.Outlined.Place, contentDescription = "Address", tint = primaryAccent) },
+                        placeholder = { Text("Вулиця...", color = textSecondaryColor) },
+                        leadingIcon = { Icon(Icons.Outlined.Place, contentDescription = "Street", tint = primaryAccent) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(),
@@ -171,28 +188,68 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                             modifier = Modifier.background(cardColor)
                         ) {
                             searchResults.forEach { suggestion ->
-                                // Формуємо коротку адресу (Вулиця, Будинок, Місто)
                                 val shortAddressName = suggestion.address?.let { addr ->
                                     val road = addr.road.orEmpty()
-                                    val houseNumber = addr.houseNumber.orEmpty()
                                     val city = addr.city ?: addr.town ?: addr.village ?: ""
-                                    listOf(road, houseNumber, city).filter { it.isNotBlank() }.joinToString(", ")
+                                    listOf(road, city).filter { it.isNotBlank() }.joinToString(", ")
                                 }.takeIf { !it.isNullOrBlank() } ?: suggestion.display_name
 
                                 DropdownMenuItem(
                                     text = { Text(shortAddressName, color = textColor, maxLines = 2) },
                                     onClick = {
-                                        address = shortAddressName
+                                        val roadName = suggestion.address?.road ?: suggestion.display_name.split(",").firstOrNull()?.trim() ?: ""
+                                        street = roadName
+
                                         val lat = suggestion.lat.toDoubleOrNull() ?: mapCenter.latitude
                                         val lon = suggestion.lon.toDoubleOrNull() ?: mapCenter.longitude
                                         mapCenter = GeoPoint(lat, lon)
+                                        mapZoom = 16.0 // Загальний зум для вулиці
+
                                         isDropdownExpanded = false
-                                        viewModel.searchAddress("") // Очищаємо результати
+                                        viewModel.searchAddress("")
                                     }
                                 )
                             }
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Блок: Будинок та Квартира
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = houseNumber,
+                        onValueChange = { newValue ->
+                            houseNumber = newValue
+                            // Тихий пошук будинку для красивого фокусу карти
+                            searchJob?.cancel()
+                            searchJob = coroutineScope.launch {
+                                delay(800)
+                                if (street.isNotEmpty() && newValue.isNotEmpty()) {
+                                    isDropdownExpanded = false // Не відкриваємо меню
+                                    viewModel.searchAddress("$street, $newValue, Одеса")
+                                }
+                            }
+                        },
+                        placeholder = { Text("Будинок", color = textSecondaryColor) },
+                        leadingIcon = { Icon(Icons.Outlined.Home, contentDescription = "House", tint = primaryAccent) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = darkTextFieldColors,
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = apartment,
+                        onValueChange = { apartment = it },
+                        placeholder = { Text("Кв. (необов.)", color = textSecondaryColor) },
+                        leadingIcon = { Icon(Icons.Outlined.MeetingRoom, contentDescription = "Apartment", tint = primaryAccent) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = darkTextFieldColors,
+                        singleLine = true
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -204,7 +261,7 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                         .height(200.dp)
                         .clip(RoundedCornerShape(16.dp))
                 ) {
-                    OpenStreetMapComponent(centerPoint = mapCenter)
+                    OpenStreetMapComponent(centerPoint = mapCenter, zoom = mapZoom)
                 }
             }
         }
@@ -260,7 +317,6 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { newValue ->
-                        // Залишаємо лише цифри та обмежуємо довжину до 10 символів
                         val digitsOnly = newValue.filter { it.isDigit() }.take(10)
                         phone = digitsOnly
                     },
@@ -306,6 +362,21 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                         singleLine = true
                     )
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Поле "Решта з" (Сдача)
+                OutlinedTextField(
+                    value = changeFrom,
+                    onValueChange = { changeFrom = it },
+                    placeholder = { Text("Решта з (₴) (необов.)", color = textSecondaryColor) },
+                    leadingIcon = { Icon(Icons.Outlined.Payments, contentDescription = "Change", tint = primaryAccent) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = darkTextFieldColors,
+                    singleLine = true
+                )
             }
         }
 
@@ -428,22 +499,29 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
             onClick = {
                 isSubmitting = true
 
-                // Читаємо введену суму. Якщо порожньо або помилка - ставимо minFee
                 val parsedFee = fee.toDoubleOrNull() ?: minFee
-                // Примусово не даємо опустити ціну нижче minFee
                 val finalFee = if (parsedFee < minFee) minFee else parsedFee
 
+                // Формуємо красивий адрес та коментар для максимальної сумісності
+                val formattedAddress = "$street, буд. $houseNumber" + if (apartment.isNotBlank()) ", кв. $apartment" else ""
+                val formattedComment = if (changeFrom.isNotBlank()) "[СУМА/РЕШТА: $changeFrom] $comment".trim() else comment
+
                 val request = OrderCreateRequest(
-                    address = address,
+                    address = formattedAddress,
+                    street = street.takeIf { it.isNotBlank() },
+                    houseNumber = houseNumber.takeIf { it.isNotBlank() },
+                    apartment = apartment.takeIf { it.isNotBlank() },
+                    changeFrom = changeFrom.takeIf { it.isNotBlank() },
                     customerName = customerName,
                     phone = phone,
                     price = price.toDoubleOrNull() ?: 0.0,
                     fee = finalFee,
-                    comment = comment,
+                    comment = formattedComment,
                     paymentType = paymentType,
                     isReturnRequired = false,
-                    prepTime = prepTime // <-- ПЕРЕДАЄМО ВИБРАНИЙ ЧАС В РЕКВЕСТ
+                    prepTime = prepTime
                 )
+
                 viewModel.createNewOrder(request) {
                     isSubmitting = false
                     onOrderCreated()
@@ -457,8 +535,8 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                 containerColor = primaryAccent,
                 disabledContainerColor = dividerColor
             ),
-            // Кнопка активна тільки якщо введено адресу, ім'я, ВАЛІДНИЙ номер телефону та ціну
-            enabled = address.isNotEmpty() && customerName.isNotEmpty() && isPhoneValid && isPriceValid && !isSubmitting
+            // Кнопка активна тільки якщо введено вулицю, будинок, ім'я, ВАЛІДНИЙ номер телефону та ціну
+            enabled = street.isNotEmpty() && houseNumber.isNotEmpty() && customerName.isNotEmpty() && isPhoneValid && isPriceValid && !isSubmitting
         ) {
             if (isSubmitting) {
                 CircularProgressIndicator(
@@ -510,9 +588,8 @@ fun PaymentOption(
     }
 }
 
-// Виправлений компонент карти: тепер він керує своїм життєвим циклом, що усуває витоки пам'яті
 @Composable
-fun OpenStreetMapComponent(centerPoint: GeoPoint) {
+fun OpenStreetMapComponent(centerPoint: GeoPoint, zoom: Double = 16.0) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var mapView by remember { mutableStateOf<MapView?>(null) }
@@ -522,7 +599,6 @@ fun OpenStreetMapComponent(centerPoint: GeoPoint) {
         Configuration.getInstance().userAgentValue = context.packageName
     }
 
-    // Правильне керування життєвим циклом карти для уникнення витоку пам'яті (Memory Leak)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -545,13 +621,14 @@ fun OpenStreetMapComponent(centerPoint: GeoPoint) {
                 mapView = this
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
-                controller.setZoom(17.0)
+                controller.setZoom(zoom)
                 controller.setCenter(centerPoint)
             }
         },
         update = { view ->
-            // Плавная анимация карты к новой точке при выборе адреса
+            // Плавная анимация карты к новой точке и обновление зума
             view.controller.animateTo(centerPoint)
+            view.controller.setZoom(zoom)
         },
         modifier = Modifier.fillMaxSize()
     )

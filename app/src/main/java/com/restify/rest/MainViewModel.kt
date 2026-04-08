@@ -384,6 +384,10 @@ class MainViewModel(
             try {
                 val response = api.createOrder(
                     address = request.address,
+                    street = request.street,
+                    houseNumber = request.houseNumber,
+                    apartment = request.apartment,
+                    changeFrom = request.changeFrom,
                     customerName = request.customerName,
                     phone = request.phone,
                     price = request.price,
@@ -391,7 +395,7 @@ class MainViewModel(
                     comment = request.comment,
                     paymentType = request.paymentType,
                     isReturn = request.isReturnRequired,
-                    prepTime = request.prepTime // <-- ПЕРЕДАЄМО ПАРАМЕТР В API
+                    prepTime = request.prepTime
                 )
                 if (response.isSuccessful) {
                     fetchOrders()
