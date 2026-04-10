@@ -91,6 +91,7 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
     val dividerColor = Color(0xFF333333)
 
     // Универсальные цвета для полей ввода
+    // Универсальные цвета для полей ввода
     val darkTextFieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = primaryAccent,
         unfocusedBorderColor = dividerColor,
@@ -98,6 +99,14 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
         unfocusedContainerColor = cardColor,
         focusedTextColor = textColor,
         unfocusedTextColor = textColor,
+
+        // --- ДОБАВЛЕННЫЕ ЦВЕТА ДЛЯ СОСТОЯНИЯ ОШИБКИ ---
+        errorTextColor = MaterialTheme.colorScheme.error, // Чтобы текст всегда был белым
+        errorBorderColor = MaterialTheme.colorScheme.error, // Красная рамка при ошибке
+        errorCursorColor = MaterialTheme.colorScheme.error, // Красный курсор
+        errorLeadingIconColor = MaterialTheme.colorScheme.error, // Красная иконка
+        // ----------------------------------------------
+
         cursorColor = primaryAccent,
         focusedLabelColor = primaryAccent,
         unfocusedLabelColor = textSecondaryColor
