@@ -50,6 +50,10 @@ class MainViewModel(
     private val _unreadChats = MutableStateFlow<Set<Int>>(emptySet())
     val unreadChats: StateFlow<Set<Int>> = _unreadChats
 
+    // --- СТАНИ ДЛЯ ПЕРСОНАЛЬНОГО ПРИЗНАЧЕННЯ КУРЬЄРУ ---
+    private val _activeCouriers = MutableStateFlow<List<ActiveCourier>>(emptyList())
+    val activeCouriers: StateFlow<List<ActiveCourier>> = _activeCouriers.asStateFlow()
+
     val isLoading = mutableStateOf(false)
     val errorMessage = mutableStateOf<String?>(null)
 
@@ -151,6 +155,23 @@ class MainViewModel(
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error fetching min fee: ${e.message}")
+            }
+        }
+    }
+
+    // ==========================================================
+    // ЛОГІКА ПЕРСОНАЛЬНИХ ЗАМОВЛЕНЬ (АКТИВНІ КУРЬЄРИ)
+    // ==========================================================
+
+    fun fetchActiveCouriers() {
+        viewModelScope.launch {
+            try {
+                val response = api.getActiveCouriers()
+                if (response.isSuccessful) {
+                    _activeCouriers.value = response.body() ?: emptyList()
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Помилка завантаження активних кур'єрів: ${e.message}")
             }
         }
     }
@@ -395,7 +416,8 @@ class MainViewModel(
                     comment = request.comment,
                     paymentType = request.paymentType,
                     isReturn = request.isReturnRequired,
-                    prepTime = request.prepTime
+                    prepTime = request.prepTime,
+                    targetCourierId = request.targetCourierId // <-- ДОДАНО ПЕРЕДАЧУ ID КУРЬЄРА
                 )
                 if (response.isSuccessful) {
                     fetchOrders()

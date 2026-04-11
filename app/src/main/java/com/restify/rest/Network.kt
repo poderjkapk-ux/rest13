@@ -77,6 +77,13 @@ data class CourierInfo(
     val rating: Double
 )
 
+// --- ДОДАНО МОДЕЛЬ ДЛЯ АКТИВНИХ КУРЬЄРІВ ---
+data class ActiveCourier(
+    val id: Int,
+    val name: String,
+    val phone: String
+)
+
 data class OrderCreateRequest(
     val address: String,
     val street: String?,        // <-- ДОДАНО ПОЛЕ
@@ -90,7 +97,8 @@ data class OrderCreateRequest(
     val comment: String,
     val paymentType: String,
     val isReturnRequired: Boolean,
-    val prepTime: Int // <-- ДОДАНО ЧАС ПРИГОТУВАННЯ
+    val prepTime: Int, // <-- ДОДАНО ЧАС ПРИГОТУВАННЯ
+    val targetCourierId: Int? = null // <-- ДОДАНО ПОЛЕ ДЛЯ ПЕРСОНАЛЬНОГО ЗАМОВЛЕННЯ
 )
 
 // --- МОДЕЛІ ДЛЯ ЧАТУ ТА ТРЕКІНГУ ---
@@ -171,14 +179,18 @@ interface RestPartnerApi {
     @GET("/api/partner/orders_native")
     suspend fun getOrders(): Response<List<PartnerOrder>>
 
+    // --- НОВИЙ ЕНДПОІНТ: АКТИВНІ КУРЬЄРИ ЗАКЛАДУ ---
+    @GET("/api/partner/active_couriers")
+    suspend fun getActiveCouriers(): Response<List<ActiveCourier>>
+
     @FormUrlEncoded
     @POST("/api/partner/create_order_native")
     suspend fun createOrder(
         @Field("dropoff_address") address: String,
-        @Field("street") street: String?,             // <-- ДОДАНО
-        @Field("house_number") houseNumber: String?,  // <-- ДОДАНО
-        @Field("apartment") apartment: String?,       // <-- ДОДАНО
-        @Field("change_from") changeFrom: String?,    // <-- ДОДАНО
+        @Field("street") street: String?,
+        @Field("house_number") houseNumber: String?,
+        @Field("apartment") apartment: String?,
+        @Field("change_from") changeFrom: String?,
         @Field("customer_name") customerName: String,
         @Field("customer_phone") phone: String,
         @Field("order_price") price: Double,
@@ -186,7 +198,8 @@ interface RestPartnerApi {
         @Field("comment") comment: String,
         @Field("payment_type") paymentType: String,
         @Field("is_return_required") isReturn: Boolean,
-        @Field("prep_time") prepTime: Int // <-- ДОДАНО ПАРАМЕТР
+        @Field("prep_time") prepTime: Int,
+        @Field("target_courier_id") targetCourierId: Int? // <-- ДОДАНО ПАРАМЕТР
     ): Response<Unit>
 
     @FormUrlEncoded

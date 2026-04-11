@@ -44,6 +44,15 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
     val minFee by viewModel.minFee.collectAsState()
     val feeReason by viewModel.feeReason.collectAsState()
 
+    // --- СТАНИ ДЛЯ ПЕРСОНАЛЬНОГО ПРИЗНАЧЕННЯ ---
+    val activeCouriers by viewModel.activeCouriers.collectAsState()
+    var selectedCourierId by remember { mutableStateOf<Int?>(null) }
+
+    // Завантажуємо активних кур'єрів при відкритті екрану
+    LaunchedEffect(Unit) {
+        viewModel.fetchActiveCouriers()
+    }
+
     // НОВІ ПОЛЯ
     var street by remember { mutableStateOf("") }
     var houseNumber by remember { mutableStateOf("") }
@@ -90,7 +99,6 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
     val textSecondaryColor = Color(0xFFAAAAAA)
     val dividerColor = Color(0xFF333333)
 
-    // Универсальные цвета для полей ввода
     // Универсальные цвета для полей ввода
     val darkTextFieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = primaryAccent,
@@ -490,6 +498,85 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // --- БЛОК: ПЕРСОНАЛЬНЕ ПРИЗНАЧЕННЯ (ТІЛЬКИ ЯКЩО Є АКТИВНІ КУРЬЄРИ) ---
+        if (activeCouriers.isNotEmpty()) {
+            PremiumCard(cardColor = cardColor) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.PersonAddAlt1, contentDescription = "Assign", tint = primaryAccent)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Докинути замовлення (Попутно)",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp,
+                            color = textSecondaryColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Можете запропонувати це замовлення кур'єру, який прямо зараз знаходиться у вас або виконує ваше замовлення.",
+                        fontSize = 12.sp,
+                        color = textSecondaryColor,
+                        lineHeight = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) {
+                        item {
+                            val isSelected = selectedCourierId == null
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) primaryAccent.copy(alpha = 0.2f) else Color.Transparent)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) primaryAccent else dividerColor,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { selectedCourierId = null }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Загальний пошук",
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) primaryAccent else textColor
+                                )
+                            }
+                        }
+                        items(activeCouriers) { courier ->
+                            val isSelected = selectedCourierId == courier.id
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) primaryAccent.copy(alpha = 0.2f) else Color.Transparent)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) primaryAccent else dividerColor,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { selectedCourierId = courier.id }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = courier.name,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) primaryAccent else textColor
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         OutlinedTextField(
             value = comment,
             onValueChange = { comment = it },
@@ -528,7 +615,8 @@ fun CreateOrderScreen(viewModel: MainViewModel, onOrderCreated: () -> Unit) {
                     comment = formattedComment,
                     paymentType = paymentType,
                     isReturnRequired = false,
-                    prepTime = prepTime
+                    prepTime = prepTime,
+                    targetCourierId = selectedCourierId // <-- ДОДАНО ID ВИБРАНОГО КУРЬЄРА
                 )
 
                 viewModel.createNewOrder(request) {
